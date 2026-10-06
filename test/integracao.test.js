@@ -1,173 +1,304 @@
-import { connection } from "../src/configs/Database.js";
-import { ClienteFactory } from "./factories/ClienteFactory.js";
-import { MontadoraFactory } from "./factories/MontadoraFactory.js";
-import { VeiculoFactory } from "./factories/VeiculoFactory.js";
+import app from "../src/app.js";
+import request from "supertest";
+import axios from "axios";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { describe, it, beforeAll, afterAll, beforeEach } from "vitest";
-import assert from "node:assert";
+import { clearDatabase } from "./utils/clearDatabase.js";
 
-describe("Testes de Integração - Factories", () => {
+// -----------------------------------------------------------------
+// Mock do axios (ViaCEP)
+// -----------------------------------------------------------------
+vi.mock("axios", () => ({
+    default: {
+        get: vi.fn(),
+    },
+}));
 
-    beforeAll(async () => {
-        // Garante conexão ativa antes dos testes
-        await connection.query("SELECT 1");
+const mockCep = () => {
+    axios.get.mockResolvedValue({
+        data: {
+            cep: "13174410",
+            logradouro: "Rua das Flores",
+            bairro: "Centro",
+            localidade: "Sumaré",
+            uf: "SP",
+        },
     });
+};
+
+// -----------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------
+const criarMontadora = async (nome = "Toyota", pais = "Japão") => {
+    const res = await request(app).post("/montadoras").send({ nome, pais });
+    return res.body.data.insertId;
+};
+
+const criarCliente = async (overrides = {}) => {
+    const payload = {
+        nome: "Jorgim",
+        cpf: "41345167812",
+        cep: "13174410",
+        numero: "105",
+        complemento: "Muro Verde",
+        ...overrides,
+    };
+    const res = await request(app).post("/clientes").send(payload);
+    return res.body.data.insertId;
+};
+
+// =================================================================
+// API DE MONTADORAS
+// =================================================================
+describe("API de montadoras", () => {
+    beforeEach(async () => {
+        await clearDatabase();
+    });
+
+    afterEach(async () => {
+        await clearDatabase();
+        vi.resetAllMocks();
+    });
+
+    it("deve listar montadoras", async () => {
+        await request(app).post("/montadoras").send({ nome: "Toyota", pais: "Japão" });
+
+        const response = await request(app).get("/montadoras");
+
+        expect(response.status).toBe(200);
+        expect(Array.isArray(response.body.data)).toBe(true);
+        expect(response.body.data.some((m) => m.nome === "Toyota")).toBe(true);
+    });
+
+    it("deve criar uma montadora com sucesso", async () => {
+        const response = await request(app)
+            .post("/montadoras")
+            .send({ nome: "Hyundai", pais: "Coreia do Sul" });
+
+        expect(response.status).toBe(201);
+        expect(response.body.data).toHaveProperty("insertId");
+    });
+
+    it("deve atualizar uma montadora com sucesso", async () => {
+        const id = await criarMontadora();
+
+        const response = await request(app)
+            .put(`/montadoras?id=${id}`)
+            .send({ nome: "Honda", pais: "Japão" });
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.affectedRows).toBe(1);
+
+        const list = await request(app).get("/montadoras");
+        expect(list.body.data.some((m) => m.nome === "Honda")).toBe(true);
+    });
+
+    it("deve deletar uma montadora com sucesso", async () => {
+        const id = await criarMontadora();
+
+        const response = await request(app).delete(`/montadoras/${id}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.affectedRows).toBe(1);
+
+        const list = await request(app).get("/montadoras");
+        expect(list.body.data.some((m) => m.id === id)).toBe(false);
+    });
+});
+
+// =================================================================
+// API DE CLIENTES
+// =================================================================
+describe("API de clientes", () => {
+    beforeEach(async () => {
+        await clearDatabase();
+        mockCep();
+    });
+
+    afterEach(async () => {
+        await clearDatabase();
+        vi.resetAllMocks();
+    });
+
+    it("deve listar clientes", async () => {
+        await criarCliente();
+
+        const response = await request(app).get("/clientes");
+
+        expect(response.status).toBe(200);
+        expect(Array.isArray(response.body.data)).toBe(true);
+        expect(response.body.data.some((c) => c.nome === "Jorgim")).toBe(true);
+    });
+
+    it("deve criar um cliente com sucesso usando mock do axios", async () => {
+        const response = await request(app)
+            .post("/clientes")
+            .send({
+                nome: "Jorgim",
+                cpf: "41345167812",
+                cep: "13174410",
+                numero: "105",
+                complemento: "Muro Verde",
+            });
+
+        expect(response.status).toBe(201);
+        expect(response.body.data).toHaveProperty("insertId");
+        expect(axios.get).toHaveBeenCalledWith("https://viacep.com.br/ws/13174410/json/");
+    });
+
+    it("deve atualizar um cliente com sucesso", async () => {
+        const id = await criarCliente();
+
+        const response = await request(app)
+            .put(`/clientes?id=${id}`)
+            .send({
+                nome: "Marcos",
+                cpf: "98765432100",
+                cep: "13174410",
+                numero: "205",
+                complemento: "Casa nova",
+            });
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.affectedRows).toBe(1);
+
+        const list = await request(app).get("/clientes");
+        expect(list.body.data.some((c) => c.nome === "Marcos")).toBe(true);
+    });
+
+    it("deve deletar um cliente com sucesso", async () => {
+        const id = await criarCliente();
+
+        const response = await request(app).delete(`/clientes/${id}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.affectedRows).toBe(1);
+
+        const list = await request(app).get("/clientes");
+        expect(list.body.data.some((c) => c.id === id)).toBe(false);
+    });
+});
+
+// =================================================================
+// API DE VEÍCULOS
+// =================================================================
+describe("API de veículos", () => {
+    const criarRelacionamento = async () => {
+        const idMontadora = await criarMontadora();
+        const idCliente = await criarCliente();
+        return { idMontadora, idCliente };
+    };
 
     beforeEach(async () => {
-        // Limpa as tabelas na ordem correta (filhos primeiro)
-        await connection.execute("DELETE FROM veiculos");
-        await connection.execute("DELETE FROM clientes");
-        await connection.execute("DELETE FROM montadoras");
-
-        // Reinicia AUTO_INCREMENT
-        await connection.execute("ALTER TABLE veiculos AUTO_INCREMENT = 1");
-        await connection.execute("ALTER TABLE clientes AUTO_INCREMENT = 1");
-        await connection.execute("ALTER TABLE montadoras AUTO_INCREMENT = 1");
+        await clearDatabase();
+        mockCep();
     });
 
-    afterAll(async () => {
-        await connection.end();
+    afterEach(async () => {
+        await clearDatabase();
+        vi.resetAllMocks();
     });
 
-    // ---------------------------------------------------------------
-    // ClienteFactory
-    // ---------------------------------------------------------------
-    describe("ClienteFactory.create", () => {
+    it("deve listar veículos", async () => {
+        const { idMontadora, idCliente } = await criarRelacionamento();
 
-        it("deve criar um cliente com todos os dados", async () => {
-            const cliente = await ClienteFactory.create(
-                "João Silva",
-                "12345678900",
-                "58000-000",
-                "Rua das Flores",
-                "Centro",
-                "João Pessoa",
-                "PB",
-                "100",
-                "Apto 12"
-            );
+        await request(app)
+            .post("/veiculos")
+            .send({
+                modelo: "Corolla",
+                placa: "ABC1234",
+                ano: 2020,
+                cor: "Prata",
+                valor: 50000,
+                idCliente,
+                idMontadora,
+            });
 
-            assert.ok(cliente.id, "ID deve ser retornado");
-            assert.strictEqual(cliente.nome, "João Silva");
-            assert.strictEqual(cliente.CPF, "12345678900");
-            assert.strictEqual(cliente.CEP, "58000000");
-            assert.strictEqual(cliente.logradouro, "Rua das Flores");
-            assert.strictEqual(cliente.bairro, "Centro");
-            assert.strictEqual(cliente.cidade, "João Pessoa");
-            assert.strictEqual(cliente.UF, "PB");
-            assert.strictEqual(cliente.numero, "100");
-            assert.strictEqual(cliente.complemento, "Apto 12");
+        const response = await request(app).get("/veiculos");
 
-            // Confirma persistência no banco
-            const [rows] = await connection.execute(
-                "SELECT * FROM clientes WHERE id = ?",
-                [cliente.id]
-            );
-            assert.strictEqual(rows.length, 1);
-            assert.strictEqual(rows[0].Nome, "João Silva");
-        });
-
-        it("deve criar um cliente sem complemento", async () => {
-            const cliente = await ClienteFactory.create(
-                "Ana Costa",
-                "11122233344",
-                "58000-002",
-                "Rua B",
-                "Bairro X",
-                "Natal",
-                "RN",
-                "45",
-                null
-            );
-
-            assert.ok(cliente.id);
-            assert.strictEqual(cliente.complemento, null);
-
-            const [rows] = await connection.execute(
-                "SELECT * FROM clientes WHERE id = ?",
-                [cliente.id]
-            );
-            assert.strictEqual(rows.length, 1);
-            assert.strictEqual(rows[0].Nome, "Ana Costa");
-        });
+        expect(response.status).toBe(200);
+        expect(Array.isArray(response.body.data)).toBe(true);
+        expect(response.body.data.some((v) => v.modelo === "Corolla")).toBe(true);
     });
 
-    // ---------------------------------------------------------------
-    // MontadoraFactory
-    // ---------------------------------------------------------------
-    describe("MontadoraFactory.create", () => {
+    it("deve criar um veículo com sucesso", async () => {
+        const { idMontadora, idCliente } = await criarRelacionamento();
 
-        it("deve criar uma montadora com nome e país", async () => {
-            const montadora = await MontadoraFactory.create("Toyota", "Japão");
+        const response = await request(app)
+            .post("/veiculos")
+            .send({
+                modelo: "Hyundai",
+                placa: "ABC1234",
+                ano: 2020,
+                cor: "Prata",
+                valor: 50000,
+                idCliente,
+                idMontadora,
+            });
 
-            assert.ok(montadora.id, "ID deve ser retornado");
-            assert.strictEqual(montadora.nome, "Toyota");
-            assert.strictEqual(montadora.pais, "Japão");
-
-            const [rows] = await connection.execute(
-                "SELECT * FROM montadoras WHERE id = ?",
-                [montadora.id]
-            );
-            assert.strictEqual(rows.length, 1);
-            assert.strictEqual(rows[0].Nome, "Toyota");
-            assert.strictEqual(rows[0].Pais, "Japão");
-        });
-
-        it("deve criar múltiplas montadoras com IDs distintos", async () => {
-            const m1 = await MontadoraFactory.create("Volkswagen", "Alemanha");
-            const m2 = await MontadoraFactory.create("Fiat", "Itália");
-
-            assert.notStrictEqual(m1.id, m2.id);
-            assert.strictEqual(m1.nome, "Volkswagen");
-            assert.strictEqual(m2.nome, "Fiat");
-        });
+        expect(response.status).toBe(201);
+        expect(response.body.data).toHaveProperty("insertId");
     });
 
-    // ---------------------------------------------------------------
-    // VeiculoFactory
-    // ---------------------------------------------------------------
-    describe("VeiculoFactory.create", () => {
+    it("deve atualizar um veículo com sucesso", async () => {
+        const { idMontadora, idCliente } = await criarRelacionamento();
 
-        it("deve criar um veículo vinculado a cliente e montadora", async () => {
-            const cliente = await ClienteFactory.create(
-                "Maria Souza",
-                "98765432100",
-                "58000-001",
-                "Av. Principal",
-                "Bairro Novo",
-                "Recife",
-                "PE",
-                "250",
-                null
-            );
+        const created = await request(app)
+            .post("/veiculos")
+            .send({
+                modelo: "Corolla",
+                placa: "ABC1234",
+                ano: 2020,
+                cor: "Prata",
+                valor: 50000,
+                idCliente,
+                idMontadora,
+            });
 
-            const montadora = await MontadoraFactory.create("Honda", "Japão");
+        const response = await request(app)
+            .put(`/veiculos?id=${created.body.data.insertId}`)
+            .send({
+                modelo: "Civic",
+                placa: "XYZ9876",
+                ano: 2021,
+                cor: "Preto",
+                valor: 65000,
+                idCliente,
+                idMontadora,
+            });
 
-            const veiculo = await VeiculoFactory.create(
-                "Civic",
-                "ABC-1234",
-                2022,
-                "Preto",
-                120000.0,
-                cliente.id,
-                montadora.id
-            );
+        expect(response.status).toBe(200);
+        expect(response.body.data.affectedRows).toBe(1);
 
-            assert.ok(veiculo.id);
-            assert.strictEqual(veiculo.modelo, "Civic");
-            assert.strictEqual(veiculo.placa, "ABC-1234");
-            assert.strictEqual(veiculo.ano, 2022);
-            assert.strictEqual(veiculo.cor, "Preto");
-            assert.strictEqual(Number(veiculo.valor), 120000);
-            assert.strictEqual(veiculo.idCliente, cliente.id);
-            assert.strictEqual(veiculo.idMontadora, montadora.id);
+        const list = await request(app).get("/veiculos");
+        expect(list.body.data.some((v) => v.modelo === "Civic")).toBe(true);
+    });
 
-            const [rows] = await connection.execute(
-                "SELECT * FROM veiculos WHERE id = ?",
-                [veiculo.id]
-            );
-            assert.strictEqual(rows.length, 1);
-            assert.strictEqual(rows[0].Placa, "ABC-1234");
-        });
+    it("deve deletar um veículo com sucesso", async () => {
+        const { idMontadora, idCliente } = await criarRelacionamento();
+
+        const created = await request(app)
+            .post("/veiculos")
+            .send({
+                modelo: "Corolla",
+                placa: "ABC1234",
+                ano: 2020,
+                cor: "Prata",
+                valor: 50000,
+                idCliente,
+                idMontadora,
+            });
+
+        const response = await request(app).delete(
+            `/veiculos/${created.body.data.insertId}`
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.affectedRows).toBe(1);
+
+        const list = await request(app).get("/veiculos");
+        expect(
+            list.body.data.some((v) => v.id === created.body.data.insertId)
+        ).toBe(false);
     });
 });
