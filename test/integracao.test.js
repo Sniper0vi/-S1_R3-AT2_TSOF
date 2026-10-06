@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearDatabase } from "./utils/clearDatabase.js";
 
 // -----------------------------------------------------------------
-// Mock do axios (ViaCEP)
+// Mock do axios (ViaCEP) - dados do CEP 01310-100 (Av. Paulista)
 // -----------------------------------------------------------------
 vi.mock("axios", () => ({
     default: {
@@ -17,10 +17,10 @@ vi.mock("axios", () => ({
 const mockCep = () => {
     axios.get.mockResolvedValue({
         data: {
-            cep: "13174410",
-            logradouro: "Rua das Flores",
-            bairro: "Centro",
-            localidade: "Sumaré",
+            cep: "01310100",
+            logradouro: "Avenida Paulista",
+            bairro: "Bela Vista",
+            localidade: "São Paulo",
             uf: "SP",
         },
     });
@@ -29,18 +29,18 @@ const mockCep = () => {
 // -----------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------
-const criarMontadora = async (nome = "Toyota", pais = "Japão") => {
+const criarMontadora = async (nome = "Volkswagen", pais = "Alemanha") => {
     const res = await request(app).post("/montadoras").send({ nome, pais });
     return res.body.data.insertId;
 };
 
 const criarCliente = async (overrides = {}) => {
     const payload = {
-        nome: "Jorgim",
-        cpf: "41345167812",
-        cep: "13174410",
-        numero: "105",
-        complemento: "Muro Verde",
+        nome: "Carlos Mendes",
+        cpf: "52998224725",
+        cep: "01310100",
+        numero: "1578",
+        complemento: "Bloco B",
         ...overrides,
     };
     const res = await request(app).post("/clientes").send(payload);
@@ -61,19 +61,21 @@ describe("API de montadoras", () => {
     });
 
     it("deve listar montadoras", async () => {
-        await request(app).post("/montadoras").send({ nome: "Toyota", pais: "Japão" });
+        await request(app)
+            .post("/montadoras")
+            .send({ nome: "Volkswagen", pais: "Alemanha" });
 
         const response = await request(app).get("/montadoras");
 
         expect(response.status).toBe(200);
         expect(Array.isArray(response.body.data)).toBe(true);
-        expect(response.body.data.some((m) => m.nome === "Toyota")).toBe(true);
+        expect(response.body.data.some((m) => m.nome === "Volkswagen")).toBe(true);
     });
 
     it("deve criar uma montadora com sucesso", async () => {
         const response = await request(app)
             .post("/montadoras")
-            .send({ nome: "Hyundai", pais: "Coreia do Sul" });
+            .send({ nome: "Ferrari", pais: "Itália" });
 
         expect(response.status).toBe(201);
         expect(response.body.data).toHaveProperty("insertId");
@@ -84,13 +86,13 @@ describe("API de montadoras", () => {
 
         const response = await request(app)
             .put(`/montadoras?id=${id}`)
-            .send({ nome: "Honda", pais: "Japão" });
+            .send({ nome: "Porsche", pais: "Alemanha" });
 
         expect(response.status).toBe(200);
         expect(response.body.data.affectedRows).toBe(1);
 
         const list = await request(app).get("/montadoras");
-        expect(list.body.data.some((m) => m.nome === "Honda")).toBe(true);
+        expect(list.body.data.some((m) => m.nome === "Porsche")).toBe(true);
     });
 
     it("deve deletar uma montadora com sucesso", async () => {
@@ -127,23 +129,25 @@ describe("API de clientes", () => {
 
         expect(response.status).toBe(200);
         expect(Array.isArray(response.body.data)).toBe(true);
-        expect(response.body.data.some((c) => c.nome === "Jorgim")).toBe(true);
+        expect(response.body.data.some((c) => c.nome === "Carlos Mendes")).toBe(true);
     });
 
     it("deve criar um cliente com sucesso usando mock do axios", async () => {
         const response = await request(app)
             .post("/clientes")
             .send({
-                nome: "Jorgim",
-                cpf: "41345167812",
-                cep: "13174410",
-                numero: "105",
-                complemento: "Muro Verde",
+                nome: "Carlos Mendes",
+                cpf: "52998224725",
+                cep: "01310100",
+                numero: "1578",
+                complemento: "Bloco B",
             });
 
         expect(response.status).toBe(201);
         expect(response.body.data).toHaveProperty("insertId");
-        expect(axios.get).toHaveBeenCalledWith("https://viacep.com.br/ws/13174410/json/");
+        expect(axios.get).toHaveBeenCalledWith(
+            "https://viacep.com.br/ws/01310100/json/"
+        );
     });
 
     it("deve atualizar um cliente com sucesso", async () => {
@@ -152,18 +156,18 @@ describe("API de clientes", () => {
         const response = await request(app)
             .put(`/clientes?id=${id}`)
             .send({
-                nome: "Marcos",
-                cpf: "98765432100",
-                cep: "13174410",
-                numero: "205",
-                complemento: "Casa nova",
+                nome: "Beatriz Rocha",
+                cpf: "11144477735",
+                cep: "01310100",
+                numero: "2200",
+                complemento: "Apto 301",
             });
 
         expect(response.status).toBe(200);
         expect(response.body.data.affectedRows).toBe(1);
 
         const list = await request(app).get("/clientes");
-        expect(list.body.data.some((c) => c.nome === "Marcos")).toBe(true);
+        expect(list.body.data.some((c) => c.nome === "Beatriz Rocha")).toBe(true);
     });
 
     it("deve deletar um cliente com sucesso", async () => {
@@ -205,11 +209,11 @@ describe("API de veículos", () => {
         await request(app)
             .post("/veiculos")
             .send({
-                modelo: "Corolla",
-                placa: "ABC1234",
-                ano: 2020,
-                cor: "Prata",
-                valor: 50000,
+                modelo: "Golf GTI",
+                placa: "RQP2A89",
+                ano: 2023,
+                cor: "Vermelho",
+                valor: 185000,
                 idCliente,
                 idMontadora,
             });
@@ -218,7 +222,7 @@ describe("API de veículos", () => {
 
         expect(response.status).toBe(200);
         expect(Array.isArray(response.body.data)).toBe(true);
-        expect(response.body.data.some((v) => v.modelo === "Corolla")).toBe(true);
+        expect(response.body.data.some((v) => v.modelo === "Golf GTI")).toBe(true);
     });
 
     it("deve criar um veículo com sucesso", async () => {
@@ -227,11 +231,11 @@ describe("API de veículos", () => {
         const response = await request(app)
             .post("/veiculos")
             .send({
-                modelo: "Hyundai",
-                placa: "ABC1234",
-                ano: 2020,
-                cor: "Prata",
-                valor: 50000,
+                modelo: "Ferrari 488",
+                placa: "FER1A23",
+                ano: 2022,
+                cor: "Amarelo",
+                valor: 2500000,
                 idCliente,
                 idMontadora,
             });
@@ -246,11 +250,11 @@ describe("API de veículos", () => {
         const created = await request(app)
             .post("/veiculos")
             .send({
-                modelo: "Corolla",
-                placa: "ABC1234",
-                ano: 2020,
-                cor: "Prata",
-                valor: 50000,
+                modelo: "Golf GTI",
+                placa: "RQP2A89",
+                ano: 2023,
+                cor: "Vermelho",
+                valor: 185000,
                 idCliente,
                 idMontadora,
             });
@@ -258,11 +262,11 @@ describe("API de veículos", () => {
         const response = await request(app)
             .put(`/veiculos?id=${created.body.data.insertId}`)
             .send({
-                modelo: "Civic",
-                placa: "XYZ9876",
-                ano: 2021,
-                cor: "Preto",
-                valor: 65000,
+                modelo: "Porsche 911",
+                placa: "PRS9K11",
+                ano: 2024,
+                cor: "Cinza",
+                valor: 1200000,
                 idCliente,
                 idMontadora,
             });
@@ -271,7 +275,7 @@ describe("API de veículos", () => {
         expect(response.body.data.affectedRows).toBe(1);
 
         const list = await request(app).get("/veiculos");
-        expect(list.body.data.some((v) => v.modelo === "Civic")).toBe(true);
+        expect(list.body.data.some((v) => v.modelo === "Porsche 911")).toBe(true);
     });
 
     it("deve deletar um veículo com sucesso", async () => {
@@ -280,11 +284,11 @@ describe("API de veículos", () => {
         const created = await request(app)
             .post("/veiculos")
             .send({
-                modelo: "Corolla",
-                placa: "ABC1234",
-                ano: 2020,
-                cor: "Prata",
-                valor: 50000,
+                modelo: "Golf GTI",
+                placa: "RQP2A89",
+                ano: 2023,
+                cor: "Vermelho",
+                valor: 185000,
                 idCliente,
                 idMontadora,
             });
